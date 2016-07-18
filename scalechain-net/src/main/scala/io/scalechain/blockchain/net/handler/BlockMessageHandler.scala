@@ -1,5 +1,6 @@
 package io.scalechain.blockchain.net.handler
 
+import com.typesafe.scalalogging.Logger
 import io.scalechain.blockchain.chain.Blockchain
 import io.scalechain.blockchain.chain.processor.BlockProcessor
 import io.scalechain.blockchain.net.message.{InvFactory, GetBlocksFactory}
@@ -11,9 +12,7 @@ import io.scalechain.blockchain.script.HashSupported._
   * The message handler for Block message.
   */
 object BlockMessageHandler {
-  private lazy val logger = LoggerFactory.getLogger(BlockMessageHandler.getClass)
-
-  val chain = Blockchain.get
+  private lazy val logger = Logger( LoggerFactory.getLogger(BlockMessageHandler.getClass) )
 
   /** Handle Block message.
     *
@@ -26,11 +25,16 @@ object BlockMessageHandler {
 
     val blockHash = block.header.hash
 
+    logger.trace(s"[P2P] Received a block. Hash : ${blockHash}, Header : ${block.header}")
 
-    logger.info(s"[P2P] Received a block. Hash : ${blockHash}")
+    // Doring block reorganization, blocks can be attached to/detached from the best blockchain,
+    // But it does not affect whether a block exists, whether a block is an orphan or not.
+    // So, it is safe not to synchronize the Blockchain object within the block message.
 
-    if (BlockProcessor.exists(blockHash)) {
-      logger.warn(s"[P2P] Duplicate block was received. Hash : ${blockHash}")
+    if (BlockProcessor.hasNonOrphan(blockHash)) {
+      logger.trace(s"[P2P] Duplicate block was received. Hash : ${blockHash}")
+    } else if (BlockProcessor.hasOrphan(blockHash)) {
+      logger.trace(s"[P2P] Duplicate orphan block was received. Hash : ${blockHash}")
     } else {
       // TODO : Add the block as a known inventory of the node that sent it.
       // pfrom->AddInventoryKnown(inv);
@@ -53,24 +57,38 @@ object BlockMessageHandler {
 
         if (newBlockHashes.isEmpty) {
           // Do nothing. Nothing to send.
+          logger.info(s"A block was ignored, as there is an orphan block being requested. ${blockHash}")
         } else {
           // Step 1.3 : Relay the newly added blocks to peers as an inventory
           val invMessage = InvFactory.createBlockInventories(newBlockHashes)
           context.communicator.sendToAll(invMessage)
-          logger.info(s"Propagating newly accepted blocks : ${invMessage} ")
+          logger.trace(s"Propagating newly accepted blocks : ${invMessage} ")
         }
-
       } else { // Case 2 : Orphan block
-        // Step 2.1 : Put the orphan block
-        // BUGBUG : An attacker can fill up my disk with lots of orphan blocks.
-        BlockProcessor.putOrphan(block)
+        if (context.peer.requestedBlock().isDefined ) {
+          // Do not process orphan blocks. We already requested parents of an orphan root.
+          logger.info(s"A block was ignored, as there is an orphan block being requested. ${blockHash}")
+        } else {
+          // Step 2.1 : Put the orphan block
+          // BUGBUG : An attacker can fill up my disk with lots of orphan blocks.
+          BlockProcessor.putOrphan(block)
 
-        // Step 2.2 : Request the peer to send the root parent of the orphan block.
-        val orphanRootHash : Hash = BlockProcessor.getOrphanRoot(blockHash)
-        val getBlocksMessage = GetBlocksFactory.create(orphanRootHash)
-        context.peer.send(getBlocksMessage)
-        logger.warn(s"An orphan block was found. Block Hash : ${blockHash}, Inventories requested : ${getBlocksMessage} ")
-        logger.info(s"Requesting to inventories of parents of the orphan : ${getBlocksMessage} ")
+          // Step 2.2 : Request the peer to send the root parent of the orphan block.
+          val orphanRootHash : Hash = BlockProcessor.getOrphanRoot(blockHash)
+
+          val getBlocksMessage = GetBlocksFactory.create(orphanRootHash)
+          context.peer.send(getBlocksMessage)
+          context.peer.blockRequested(orphanRootHash)
+          logger.info(s"An orphan block was found. Block Hash : ${blockHash}, Previous Hash : ${block.header.hashPrevBlock}, Inventories requested : ${getBlocksMessage} ")
+          logger.trace(s"Requesting inventories of parents of the orphan. Orphan root: ${orphanRootHash} ")
+        }
+      }
+    }
+
+    if ( context.peer.requestedBlock().isDefined ) { // If the block hash matches the requested block, clear the requested block for getting parents of an orphan root.
+      if ( blockHash == context.peer.requestedBlock().get ) {
+        logger.trace(s"The requested block received. Clearing the requested block. ${blockHash}")
+        context.peer.clearRequestedBlock()
       }
     }
   }

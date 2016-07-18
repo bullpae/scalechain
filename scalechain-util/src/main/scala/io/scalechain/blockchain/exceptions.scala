@@ -86,7 +86,6 @@ object ErrorCode {
   val InvalidTransactionInput = ErrorCode("invalid_transaction_input")
 
   // Chain layer
-  val InvalidOutPoint                = ErrorCode("invalid_out_point")
   val InvalidBlockHeight             = ErrorCode("invalid_block_height")
   val InvalidBlockHeightOnDatabase   = ErrorCode("invalid_block_height_on_database")
   val InvalidTransactionOutPoint     = ErrorCode("invalid_transaction_out_point")
@@ -97,7 +96,7 @@ object ErrorCode {
   // Net Layer
   // HeadersMessageHandler
   val NonContinuousBlockHeaders      = ErrorCode("non_continuous_block_headers")
-
+  val NoCoinForBlockSigning          = ErrorCode("no_coin_for_block_signing")
 }
 
 

@@ -64,18 +64,18 @@ class ChainSampleData(chainEventListener: Option[ChainEventListener]) extends Bl
   private val blockIndex = new TestBlockIndex()
 
   object Alice {
-    val Addr1 = generateAddress("Alice") // for receiving from others
-    val Addr2 = generateAddress("Alice") // for receiving changes
+    val Addr1 = generateAccountAddress("Alice") // for receiving from others
+    val Addr2 = generateAccountAddress("Alice") // for receiving changes
   }
 
   object Bob {
-    val Addr1 = generateAddress("Bob") // for receiving from others
-    val Addr2 = generateAddress("Bob") // for receiving changes
+    val Addr1 = generateAccountAddress("Bob") // for receiving from others
+    val Addr2 = generateAccountAddress("Bob") // for receiving changes
   }
 
   object Carry {
-    val Addr1 = generateAddress("Carry") // for receiving from others
-    val Addr2 = generateAddress("Carry") // for receiving changes
+    val Addr1 = generateAccountAddress("Carry") // for receiving from others
+    val Addr2 = generateAccountAddress("Carry") // for receiving changes
   }
 
 
@@ -108,7 +108,7 @@ class ChainSampleData(chainEventListener: Option[ChainEventListener]) extends Bl
 
     val transactionHash = getTxHash(transactionWithName)
     blockIndex.addTransaction( transactionHash, transactionWithName.transaction)
-    chainEventListener.map(_.onNewTransaction(transactionWithName.transaction))
+    chainEventListener.map(_.onNewTransaction(transactionWithName.transaction, None, None))
     //println(s"transaction(${transactionWithName.name}) added : ${transactionHash}")
   }
 
@@ -116,9 +116,15 @@ class ChainSampleData(chainEventListener: Option[ChainEventListener]) extends Bl
   def addBlock(block: Block) : Unit = {
     val blockHeight = blockIndex.bestBlockHeight+1
     blockIndex.addBlock(block, blockHeight)
-    chainEventListener.map(_.onAttachBlock(
-      ChainBlock(blockHeight, block)
-    ))
+    var transactionIndex = -1;
+    block.transactions foreach { transaction =>
+      transactionIndex += 1
+      chainEventListener.map(_.onNewTransaction(
+        transaction,
+        Some( ChainBlock(blockHeight, block) ),
+        Some( transactionIndex )
+      ))
+    }
   }
 
   def newBlock(transactionsWithName : List[TransactionWithName]) : Block = {

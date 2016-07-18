@@ -3,7 +3,7 @@ package io.scalechain.wallet
 import java.io.File
 
 import io.scalechain.blockchain.TransactionVerificationException
-import io.scalechain.blockchain.chain.{TransactionWithName, OutputWithOutPoint, ChainSampleData}
+import io.scalechain.blockchain.chain.{Blockchain, TransactionWithName, OutputWithOutPoint, ChainSampleData}
 import io.scalechain.blockchain.proto._
 import io.scalechain.blockchain.proto.codec.TransactionCodec
 import io.scalechain.blockchain.script.HashSupported._
@@ -34,6 +34,8 @@ class WalletSpec extends FlatSpec with BeforeAndAfterEach with TransactionTestDa
 
   var wallet  : Wallet = null
   var storage : DiskBlockStorage = null
+  var chain : Blockchain = null
+
   val testPathForWallet = new File("./target/unittests-WalletSpec-wallet/")
   val testPathForStorage = new File("./target/unittests-WalletSpec-storage/")
   override def beforeEach() {
@@ -44,6 +46,10 @@ class WalletSpec extends FlatSpec with BeforeAndAfterEach with TransactionTestDa
 
     storage = new DiskBlockStorage(testPathForStorage, TEST_RECORD_FILE_SIZE)
     DiskBlockStorage.theBlockStorage = storage
+
+    chain = new Blockchain(storage)
+    Blockchain.theBlockchain = chain
+
     wallet = Wallet.create(testPathForWallet)
 
     super.beforeEach()
@@ -56,6 +62,7 @@ class WalletSpec extends FlatSpec with BeforeAndAfterEach with TransactionTestDa
     wallet.close()
 
     storage = null
+    chain = null
     wallet  = null
 
     FileUtils.deleteDirectory(testPathForWallet)
@@ -953,4 +960,26 @@ String Response : {
     val S = new WalletSampleData(wallet)
     // TODO : Implement test case
   }
+
+  "getPrivateKeys" should "return an empty list if the address was imported" in {
+    val S = new WalletSampleData(wallet)
+    wallet.importOutputOwnership(
+      S.TestBlockchainView,
+      "test1",
+      S.Alice.Addr1.address,
+      rescanBlockchain = false)
+
+    val keys = wallet.getPrivateKeys(Some(S.Alice.Addr1.address))
+    keys.length shouldBe 0
+  }
+
+  "getPrivateKeys" should "return a list that has a private key if the address was generated" in {
+    val addr1 = wallet.newAddress("test1")
+
+    val addr1_privateKeys = wallet.getPrivateKeys(Some(addr1))
+
+    addr1_privateKeys.length shouldBe 1
+    CoinAddress.from(addr1_privateKeys.head) shouldBe addr1
+  }
+
 }
